@@ -1,0 +1,147 @@
+// App.js — React Native front-end for Advanced Social Media App
+
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, SafeAreaView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import io from 'socket.io-client';
+
+const API_URL = 'http://localhost:5000';
+const socket = io(API_URL);
+
+export default function App() {
+  const [token, setToken] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [content, setContent] = useState('');
+  const [feed, setFeed] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [receiverId, setReceiverId] = useState('');
+
+  useEffect(() => {
+    if (token) fetchFeed();
+  }, [token]);
+
+  const register = async () => {
+    try {
+      await axios.post(`${API_URL}/register`, { username, email, password });
+      alert('Registration successful. You can now log in.');
+    } catch (e) {
+      alert('Registration failed.');
+    }
+  };
+
+  const login = async () => {
+    try {
+      const res = await axios.post(`${API_URL}/login`, { email, password });
+      setToken(res.data.token);
+      await AsyncStorage.setItem('token', res.data.token);
+      socket.connect();
+    } catch (e) {
+      alert('Invalid credentials.');
+    }
+  };
+
+  const createPost = async () => {
+    try {
+      await axios.post(`${API_URL}/create_post`, { content }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setContent('');
+      fetchFeed();
+    } catch (e) {
+      alert('Failed to post.');
+    }
+  };
+
+  const fetchFeed = async () => {
+    try {
+      const rec = await axios.get(`${API_URL}/recommend_posts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFeed(rec.data);
+    } catch (e) {
+      alert('Could not load posts.');
+    }
+  };
+
+  const sendMessage = (text) => {
+    socket.emit('send_message', { sender_id: 1, receiver_id: receiverId, text });
+  };
+
+  useEffect(() => {
+    socket.on('receive_message', msg => {
+      setChatMessages(prev => [...prev, msg]);
+    });
+    return () => socket.off('receive_message');
+  }, []);
+
+  if (!token) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.header}>Login</Text>
+        <TextInput placeholder="Email" style={styles.input} onChangeText={setEmail} />
+        <TextInput placeholder="Password" secureTextEntry style={styles.input} onChangeText={setPassword} />
+        <TouchableOpacity style={styles.button} onPress={login}>
+          <Text style={styles.buttonText}>Login</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.header}>or Register</Text>
+        <TextInput placeholder="Username" style={styles.input} onChangeText={setUsername} />
+        <TouchableOpacity style={styles.button} onPress={register}>
+          <Text style={styles.buttonText}>Register</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.header}>Your Feed</Text>
+      <TextInput placeholder="What's on your mind?" style={styles.input} value={content} onChangeText={setContent} />
+      <TouchableOpacity style={styles.button} onPress={createPost}>
+        <Text style={styles.buttonText}>Post</Text>
+      </TouchableOpacity>
+
+      <FlatList
+        data={feed}
+        keyExtractor={item => item.id.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.post}>
+            <Text style={styles.username}>User {item.author_id}</Text>
+            <Text>{item.content}</Text>
+          </View>
+        )}
+      />
+
+      <Text style={styles.header}>Chat</Text>
+      <TextInput placeholder="Receiver ID" style={styles.input} onChangeText={setReceiverId} />
+      <FlatList
+        data={chatMessages}
+        keyExtractor={(item, index) => index.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.message}>
+            <Text>{item.sender_id === 1 ? 'You' : 'Them'}: {item.text}</Text>
+          </View>
+        )}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Type message..."
+        onSubmitEditing={(e) => sendMessage(e.nativeEvent.text)}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 20, backgroundColor: '#fafafa' },
+  header: { fontSize: 22, marginVertical: 10, fontWeight: '600' },
+  input: { borderWidth: 1, borderColor: '#ccc', padding: 10, marginVertical: 8, borderRadius: 6 },
+  button: { backgroundColor: '#007bff', padding: 12, borderRadius: 8, alignItems: 'center' },
+  buttonText: { color: '#fff', fontSize: 16 },
+  post: { backgroundColor: '#fff', padding: 15, borderRadius: 10, marginVertical: 6 },
+  username: { fontWeight: 'bold', marginBottom: 4 },
+  message: { padding: 8, backgroundColor: '#f1f1f1', borderRadius: 6, marginVertical: 4 }
+});
