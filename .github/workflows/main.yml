@@ -46,7 +46,7 @@ export default function App() {
   const createPost = async () => {
     try {
       await axios.post(`${API_URL}/create_post`, { content }, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers
       });
       setContent('');
       fetchFeed();
